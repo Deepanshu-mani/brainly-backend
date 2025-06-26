@@ -24,7 +24,7 @@ app.use(cors({
 //     credentials: true
 //   }));
 app.use(cors({
-    origin : "*"
+    origin : "*",
 }))
 
 //db connection
@@ -216,25 +216,32 @@ app.post('/api/v1/brain/share', userMiddleware, async (req, res) => {
 app.get('/api/v1/brain/:shareLink', async (req, res) => {
     const hash = req.params.shareLink;
 
-    const link = await LinkModel.findOne({ hash });
-    console.log("Link:", link);
+    const link = await LinkModel.findOne({
+        hash
+    })
     if (!link) {
-        console.log("No link found for hash:", hash);
-        return res.status(404).json({ message: "Shared link not found" });
+        res.status(411).json({
+            message: "Incorrect link"
+        })
+        return;
     }
+    const content = await ContentModel.find({
+        userId: link.userId
+    })
 
-    const content = await ContentModel.find({ userId: link.userId });
-    console.log("Content:", content);
+    const user = await UserModel.findOne({
+        _id: link.userId
+    })
 
-    const user = await UserModel.findOne({ _id: link.userId });
-    console.log("User:", user);
     if (!user) {
-        console.log("No user found for userId:", link.userId);
-        return res.status(404).json({ message: "User not found for shared link" });
+        res.status(411).json({
+            message: "User not found, error should ideally not happen"
+        })
+        return;
     }
-
     res.json({
         username: user.username,
         content
-    });
+    })
+
 })
