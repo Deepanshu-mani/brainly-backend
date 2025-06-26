@@ -19,12 +19,13 @@ app.use(cors({
 }));
 
 // Explicitly set CORS headers
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "https://brainly-9lwi.vercel.app");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  next();
-});
+// app.use(cors({
+//     origin: ["http://localhost:5173", "https://brainly-9lwi.vercel.app"],
+//     credentials: true
+//   }));
+app.use(cors({
+    origin : "*"
+}))
 
 //db connection
 async function main() {
