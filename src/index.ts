@@ -13,19 +13,8 @@ config();
 
 const app = express();
 app.use(express.json());
-// app.use(cors({
-//   origin: ["http://localhost:5173", "https://brainly-9lwi.vercel.app"],
-//   credentials: true
-// }));
 
-// Explicitly set CORS headers
-// app.use(cors({
-//     origin: ["http://localhost:5173", "https://brainly-9lwi.vercel.app"],
-//     credentials: true
-//   }));
-app.use(cors({
-    origin : "*",
-}))
+app.use(cors());
 
 //db connection
 async function main() {
