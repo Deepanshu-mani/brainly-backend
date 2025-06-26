@@ -14,9 +14,7 @@ config();
 const app = express();
 app.use(express.json());
 
-app.use(cors({
-    origin : "*",
-}));
+app.use(cors());
 
 //db connection
 async function main() {
