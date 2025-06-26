@@ -216,32 +216,25 @@ app.post('/api/v1/brain/share', userMiddleware, async (req, res) => {
 app.get('/api/v1/brain/:shareLink', async (req, res) => {
     const hash = req.params.shareLink;
 
-    const link = await LinkModel.findOne({
-        hash
-    })
+    const link = await LinkModel.findOne({ hash });
+    console.log("Link:", link);
     if (!link) {
-        res.status(411).json({
-            message: "Incorrect link"
-        })
-        return;
+        console.log("No link found for hash:", hash);
+        return res.status(404).json({ message: "Shared link not found" });
     }
-    const content = await ContentModel.find({
-        userId: link.userId
-    })
 
-    const user = await UserModel.findOne({
-        _id: link.userId
-    })
+    const content = await ContentModel.find({ userId: link.userId });
+    console.log("Content:", content);
 
+    const user = await UserModel.findOne({ _id: link.userId });
+    console.log("User:", user);
     if (!user) {
-        res.status(411).json({
-            message: "User not found, error should ideally not happen"
-        })
-        return;
+        console.log("No user found for userId:", link.userId);
+        return res.status(404).json({ message: "User not found for shared link" });
     }
+
     res.json({
         username: user.username,
         content
-    })
-
+    });
 })
