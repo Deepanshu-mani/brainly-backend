@@ -9,7 +9,11 @@ import bcrypt from 'bcrypt';
 import { userMiddleware } from './middleware';
 import { random } from './utils';
 import cors from 'cors';
+import { startSelfPing } from './intro';
+
 config();
+
+startSelfPing();
 
 const app = express();
 app.use(express.json());
@@ -34,7 +38,11 @@ main();
 
 app.get('/', (req, res) => {
     res.send("Server is up and Running");
-})
+});
+
+app.get('/ping', (req, res) => {
+    res.send("pong");
+});
 
 // schema
 const SignUpSchema = z.object({
