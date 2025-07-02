@@ -7,7 +7,7 @@ import { config } from 'dotenv';
 import { ContentModel, LinkModel, UserModel } from './db';
 import bcrypt from 'bcrypt';
 import { userMiddleware } from './middleware';
-import { random } from './utils';
+import {random} from './utils';
 import cors from 'cors';
 import { startSelfPing } from './intro';
 
