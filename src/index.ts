@@ -5,9 +5,9 @@ import mongoose from 'mongoose';
 import { config } from 'dotenv';
 import cors from 'cors';
 import { startSelfPing } from './utils/intro';
-import { userRouter } from './routes/userRouter';
-import { brainRouter } from './routes/brainRouter';
-import { contentRouter } from './routes/ContentRouter';
+import { userRouter } from './routes/user';
+import { brainRouter } from './routes/brain';
+import { contentRouter } from './routes/content';
 
 config();
 
