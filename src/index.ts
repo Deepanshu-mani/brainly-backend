@@ -7,7 +7,7 @@ import cors from 'cors';
 import { startSelfPing } from './utils/intro';
 import { userRouter } from './routes/userRouter';
 import { brainRouter } from './routes/brainRouter';
-import { contentRouter } from './routes/BontentRouter';
+import { contentRouter } from './routes/ContentRouter';
 
 config();
 
