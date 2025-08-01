@@ -11,12 +11,13 @@ contentRouter.post('/', userMiddleware, (req, res) => {
     const link = req.body.link;
     const type = req.body.type;
     const title = req.body.title;
+    const tags: string[] = req.body.tags;
     ContentModel.create({
         link,
         title,
         type,
         userId: req.userId,
-        tags: [],
+        tags,
     })
     res.json({
         message: "content added"
@@ -63,3 +64,23 @@ contentRouter.delete('/all', userMiddleware, async (req, res) => {
 
 
 })
+
+
+contentRouter.put("/:id", userMiddleware, async (req, res) => {
+    const contentId = req.params.id;
+    const content = await ContentModel.findOne({ _id: contentId, userId: req.userId });
+
+    if (!content) {
+         res.status(404).json({ message: "Content not found" });
+         return
+    }
+
+    const { title, tags, type } = req.body;
+
+    if (title !== undefined) content.title = title;
+    if (tags !== undefined) content.tags = tags;
+    if (type !== undefined) content.type = type;
+
+    await content.save();
+    res.json({ message: "Content updated", content });
+});

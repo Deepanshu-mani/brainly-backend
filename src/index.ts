@@ -45,7 +45,7 @@ app.use("/api/v1/brain",  brainRouter);
 
 
 app.get('/', (req, res) => {
-    res.send("Server is up and Running");
+    res.send("Server is up and Running"); 
 });
 
 
