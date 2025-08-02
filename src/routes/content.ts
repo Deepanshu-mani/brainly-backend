@@ -38,18 +38,26 @@ contentRouter.get('/', userMiddleware, async (req, res) => {
 
 // delete content
 contentRouter.delete('/', userMiddleware, async (req, res) => {
+    try {
+        const contentId = req.body.contentId;
+        const userId = req.userId;
 
-    const contentId = req.body.contentId;
-    await ContentModel.deleteMany({
-        _id: contentId,
-        userId: req.userId,
-    })
-    res.json({
-        message: "Content deleted"
-    })
+        const result = await ContentModel.deleteOne({
+            _id: contentId,
+            userId: userId,
+        });
 
+        if (result.deletedCount === 0) {
+             res.status(404).json({ message: "Content not found or not authorized" });
+             return
+        }
 
-})
+        res.json({ message: "Content deleted successfully" });
+    } catch (err) {
+        console.error("Error deleting content:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
 
 // delete content all 
 contentRouter.delete('/all', userMiddleware, async (req, res) => {
