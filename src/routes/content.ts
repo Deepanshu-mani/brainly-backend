@@ -17,6 +17,7 @@ contentRouter.post('/', userMiddleware, async (req, res) => {
             return;
         }
         
+        
         const newContent: any = {
             title,
             type,
@@ -39,8 +40,8 @@ contentRouter.post('/', userMiddleware, async (req, res) => {
         // Create content first
         const createdContent = await ContentModel.create(newContent);
 
-        // Process content asynchronously if it's a website or has content
-        if (type === 'website' && link) {
+        // Process content asynchronously for URLs (website/twitter/youtube) or notes
+        if ((type === 'website' || type === 'twitter' || type === 'youtube') && link) {
             processWebsiteContent(createdContent._id.toString(), link, req.userId);
         } else if (content && type === 'note') {
             processNoteContent(createdContent._id.toString(), content, req.userId);
@@ -55,6 +56,54 @@ contentRouter.post('/', userMiddleware, async (req, res) => {
         res.status(500).json({ 
             message: `Failed to create ${req.body.type === 'note' ? 'note' : 'content'}` 
         });
+    }
+});
+
+// Reprocess existing URL contents to backfill AI fields and metadata
+contentRouter.post('/reprocess', userMiddleware, async (req, res) => {
+    try {
+        const force = Boolean(req.body?.force);
+        const filter: any = {
+            userId: req.userId,
+            type: { $in: ['website', 'twitter', 'youtube', 'note'] },
+            link: { $exists: true, $ne: null }
+        };
+
+        if (!force) {
+            filter.$or = [
+                { embedding: { $exists: false } },
+                { embedding: { $eq: null } },
+                { summary: { $exists: false } },
+                { summary: { $eq: null } },
+                { 'websiteMetadata.description': { $exists: false } },
+            ];
+        }
+
+        const items = await ContentModel.find(filter);
+        let queued = 0;
+        for (const it of items) {
+            if (it.type === 'note') {
+                // Decode content from data URL if needed (mirrors summary route logic)
+                let rawText = (it as any).content || '';
+                if (!rawText && it.link && typeof it.link === 'string' && it.link.startsWith('data:text')) {
+                    try {
+                        const encoded = it.link.split(',')[1] || '';
+                        rawText = decodeURIComponent(encoded);
+                    } catch {}
+                }
+                if (rawText && rawText.trim().length > 0) {
+                    processNoteContent(String(it._id), rawText, String(req.userId));
+                    queued++;
+                }
+            } else if (it.link) {
+                processWebsiteContent(String(it._id), String(it.link), String(req.userId));
+                queued++;
+            }
+        }
+        res.json({ message: 'Reprocess enqueued', queued });
+    } catch (error) {
+        console.error('Error reprocessing content:', error);
+        res.status(500).json({ message: 'Failed to reprocess content' });
     }
 });
 
@@ -118,6 +167,8 @@ contentRouter.post('/bookmark', userMiddleware, async (req, res) => {
 contentRouter.get('/search', userMiddleware, async (req, res) => {
     try {
         const { query, type, tags, limit = 10 } = req.query;
+        // Treat missing/"all" as unlimited (bounded for safety)
+        const lim = (typeof limit === 'string' && limit !== 'all') ? parseInt(limit as string) : 1000;
         
         if (!req.userId) {
             res.status(401).json({ message: 'User not authenticated' });
@@ -130,22 +181,26 @@ contentRouter.get('/search', userMiddleware, async (req, res) => {
 
         if (query && typeof query === 'string') {
             // Vector search
+            const opts: any = {};
+            if (type && typeof type === 'string') opts.type = type;
+            if (tags && typeof tags === 'string') opts.tags = tags.split(',').map(t => t.trim());
             const searchResults = await VectorSearchService.searchContent(
-                query, 
-                userId, 
-                parseInt(limit as string)
+                query,
+                userId,
+                lim,
+                opts
             );
             results = searchResults.map(r => r.content);
         } else if (tags && typeof tags === 'string') {
             // Tag search
             const tagArray = tags.split(',').map(t => t.trim());
-            results = await VectorSearchService.searchByTags(tagArray, userId, parseInt(limit as string));
+            results = await VectorSearchService.searchByTags(tagArray, userId, lim);
         } else if (type && typeof type === 'string') {
             // Type search
-            results = await VectorSearchService.searchByType(type, userId, parseInt(limit as string));
+            results = await VectorSearchService.searchByType(type, userId, lim);
         } else {
             // Get all content
-            results = await ContentModel.find({ userId }).sort({ createdAt: -1 }).limit(parseInt(limit as string));
+            results = await ContentModel.find({ userId }).sort({ createdAt: -1 }).limit(lim);
         }
 
         res.json({ content: results });
@@ -177,6 +232,55 @@ contentRouter.get('/similar/:id', userMiddleware, async (req, res) => {
     } catch (error) {
         console.error('Error getting similar content:', error);
         res.status(500).json({ message: 'Failed to get similar content' });
+    }
+});
+
+// Generate or fetch AI summary/keywords for a content item
+contentRouter.get('/:id/summary', userMiddleware, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const force = (req.query.force as string) === 'true';
+
+        const existing = await ContentModel.findOne({ _id: id, userId: req.userId });
+        if (!existing) {
+            res.status(404).json({ message: 'Content not found' });
+            return;
+        }
+
+        if (!force && (existing as any).summary && Array.isArray((existing as any).keywords)) {
+            res.json({ summary: (existing as any).summary, keywords: (existing as any).keywords });
+            return;
+        }
+
+        let rawText = '';
+        if (existing.type === 'note') {
+            rawText = ((existing as any).content as string) || '';
+            if (!rawText && existing.link && typeof existing.link === 'string' && existing.link.startsWith('data:text')) {
+                try {
+                    const encoded = existing.link.split(',')[1] || '';
+                    rawText = decodeURIComponent(encoded);
+                } catch {}
+            }
+        } else if (existing.link && typeof existing.link === 'string') {
+            const meta = await WebsiteService.extractMetadata(existing.link);
+            rawText = meta.content || meta.description || existing.title || '';
+        }
+
+        if (!rawText || rawText.trim().length === 0) {
+            res.status(400).json({ message: 'No content text available to summarize' });
+            return;
+        }
+
+        const ai = await AIService.processContent(rawText);
+        await ContentModel.updateOne(
+            { _id: id },
+            { summary: ai.summary, keywords: ai.keywords, embedding: ai.embedding, updatedAt: new Date() }
+        );
+
+        res.json({ summary: ai.summary, keywords: ai.keywords });
+    } catch (error) {
+        console.error('Error generating summary for content:', error);
+        res.status(500).json({ message: 'Failed to generate summary' });
     }
 });
 
@@ -226,21 +330,64 @@ contentRouter.delete('/all', userMiddleware, async (req, res) => {
 
 contentRouter.put("/:id", userMiddleware, async (req, res) => {
     const contentId = req.params.id;
-    const content = await ContentModel.findOne({ _id: contentId, userId: req.userId });
+    const existing = await ContentModel.findOne({ _id: contentId, userId: req.userId });
 
-    if (!content) {
+    if (!existing) {
          res.status(404).json({ message: "Content not found" });
          return
     }
 
-    const { title, tags, type } = req.body;
+    const { title, tags, type, link, content: bodyContent, dueDate, isCompleted } = req.body as any;
 
-    if (title !== undefined) content.title = title;
-    if (tags !== undefined) content.tags = tags;
-    if (type !== undefined) content.type = type;
+    // Track whether AI fields should be refreshed
+    let shouldReprocess = false;
 
-    await content.save();
-    res.json({ message: "Content updated", content });
+    if (title !== undefined) { existing.title = title; shouldReprocess = true; }
+    if (tags !== undefined) existing.tags = tags;
+    if (type !== undefined) { existing.type = type; shouldReprocess = true; }
+
+    if (existing.type === 'note') {
+        if (bodyContent !== undefined) {
+            const encoded = `data:text/plain;charset=utf-8,${encodeURIComponent(bodyContent || "")}`;
+            existing.link = encoded;
+            (existing as any).content = bodyContent;
+            shouldReprocess = true;
+        }
+        if (dueDate !== undefined) (existing as any).dueDate = dueDate;
+        if (isCompleted !== undefined) (existing as any).isCompleted = !!isCompleted;
+    } else {
+        if (link !== undefined) { existing.link = link; shouldReprocess = true; }
+    }
+
+    existing.updatedAt = new Date();
+    await existing.save();
+
+    // Kick off async reprocessing if content changed or embedding missing
+    try {
+        if (shouldReprocess || !(existing as any).embedding || ((existing as any).embedding as any[])?.length === 0) {
+            if (existing.type === 'note') {
+                let rawText = (existing as any).content || '';
+                if (!rawText && existing.link && typeof existing.link === 'string' && existing.link.startsWith('data:text')) {
+                    try {
+                        const encoded = existing.link.split(',')[1] || '';
+                        rawText = decodeURIComponent(encoded);
+                    } catch {}
+                }
+                if (!rawText || rawText.trim().length === 0) {
+                    rawText = existing.title || '';
+                }
+                if (rawText.trim().length > 0) {
+                    processNoteContent(contentId, rawText, String(req.userId));
+                }
+            } else if (existing.link) {
+                processWebsiteContent(contentId, String(existing.link), String(req.userId));
+            }
+        }
+    } catch (err) {
+        console.warn('Reprocess after update failed:', err);
+    }
+
+    res.json({ message: "Content updated", content: existing });
 });
 
 // Helper functions for async processing
@@ -256,7 +403,14 @@ async function processWebsiteContent(contentId: string, url: string, userId: str
         const metadata = await WebsiteService.extractMetadata(url);
         
         // Process with AI
-        const aiResult = await AIService.processContent(metadata.content);
+        // Choose best available text for embedding: content -> description -> title -> domain
+        const baseText = (metadata.content && metadata.content.trim().length > 0)
+            ? metadata.content
+            : (metadata.description && metadata.description.trim().length > 0)
+                ? metadata.description
+                : (metadata.title || metadata.domain || '');
+
+        const aiResult = await AIService.processContent(baseText);
         
         // Update content with AI results
         await ContentModel.updateOne(
