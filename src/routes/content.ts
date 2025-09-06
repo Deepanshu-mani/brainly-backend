@@ -19,7 +19,6 @@ contentRouter.post('/', userMiddleware, async (req, res) => {
         
         
         const newContent: any = {
-            title,
             type,
             userId: req.userId,
             tags,
@@ -31,6 +30,7 @@ contentRouter.post('/', userMiddleware, async (req, res) => {
         if (type === "note") {
             const encodedContent = `data:text/plain;charset=utf-8,${encodeURIComponent(content || "")}`;
             newContent.link = encodedContent;
+            newContent.title = title || 'Note';
             if (dueDate) newContent.dueDate = dueDate;
             newContent.isCompleted = isCompleted;
         } else if (link) {
@@ -132,7 +132,6 @@ contentRouter.post('/bookmark', userMiddleware, async (req, res) => {
         const metadata = await WebsiteService.extractMetadata(url);
         
         const newContent = {
-            title: metadata.title,
             link: url,
             type: 'website',
             userId: req.userId,
@@ -160,6 +159,49 @@ contentRouter.post('/bookmark', userMiddleware, async (req, res) => {
     } catch (error) {
         console.error('Error bookmarking website:', error);
         res.status(500).json({ message: 'Failed to bookmark website' });
+    }
+});
+
+// AI-powered search that answers questions about your content
+contentRouter.get('/ai-search', userMiddleware, async (req, res) => {
+    try {
+        const { query } = req.query;
+        
+        if (!req.userId) {
+            res.status(401).json({ message: 'User not authenticated' });
+            return;
+        }
+        
+        if (!query || typeof query !== 'string') {
+            res.status(400).json({ message: 'Query is required' });
+            return;
+        }
+        
+        const userId = req.userId;
+        
+        // Get relevant content based on the query (limit to 10 for better AI focus)
+        const searchResults = await VectorSearchService.searchContent(query, userId, 10);
+        const relevantContent = searchResults.map(r => r.content);
+        
+        // If no relevant content found, get recent content
+        let fallbackContent: any[] = [];
+        if (relevantContent.length === 0) {
+            fallbackContent = await ContentModel.find({ userId })
+                .sort({ createdAt: -1 })
+                .limit(10);
+        }
+        
+        // Generate AI response
+        const aiResponse = await AIService.generateSearchResponse(query, relevantContent, fallbackContent);
+        
+                        res.json({ 
+            response: aiResponse,
+            relevantContent: relevantContent.slice(0, 1), // Show only the most relevant item
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error in AI search:', error);
+        res.status(500).json({ message: 'AI search failed' });
     }
 });
 
@@ -263,7 +305,7 @@ contentRouter.get('/:id/summary', userMiddleware, async (req, res) => {
             }
         } else if (existing.link && typeof existing.link === 'string') {
             const meta = await WebsiteService.extractMetadata(existing.link);
-            rawText = meta.content || meta.description || existing.title || '';
+            rawText = meta.content || meta.description || '';
         }
 
         if (!rawText || rawText.trim().length === 0) {
@@ -342,11 +384,14 @@ contentRouter.put("/:id", userMiddleware, async (req, res) => {
     // Track whether AI fields should be refreshed
     let shouldReprocess = false;
 
-    if (title !== undefined) { existing.title = title; shouldReprocess = true; }
     if (tags !== undefined) existing.tags = tags;
     if (type !== undefined) { existing.type = type; shouldReprocess = true; }
 
     if (existing.type === 'note') {
+        if (title !== undefined) {
+            (existing as any).title = title;
+            shouldReprocess = true;
+        }
         if (bodyContent !== undefined) {
             const encoded = `data:text/plain;charset=utf-8,${encodeURIComponent(bodyContent || "")}`;
             existing.link = encoded;
@@ -374,7 +419,7 @@ contentRouter.put("/:id", userMiddleware, async (req, res) => {
                     } catch {}
                 }
                 if (!rawText || rawText.trim().length === 0) {
-                    rawText = existing.title || '';
+                    rawText = '';
                 }
                 if (rawText.trim().length > 0) {
                     processNoteContent(contentId, rawText, String(req.userId));
@@ -403,12 +448,12 @@ async function processWebsiteContent(contentId: string, url: string, userId: str
         const metadata = await WebsiteService.extractMetadata(url);
         
         // Process with AI
-        // Choose best available text for embedding: content -> description -> title -> domain
+        // Choose best available text for embedding: content -> description -> domain
         const baseText = (metadata.content && metadata.content.trim().length > 0)
             ? metadata.content
             : (metadata.description && metadata.description.trim().length > 0)
                 ? metadata.description
-                : (metadata.title || metadata.domain || '');
+                : (metadata.domain || '');
 
         const aiResult = await AIService.processContent(baseText);
         

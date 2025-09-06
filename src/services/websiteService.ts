@@ -1,7 +1,6 @@
 import axios from 'axios';
 
 export interface WebsiteMetadata {
-    title: string;
     description: string;
     favicon: string;
     domain: string;
@@ -26,8 +25,7 @@ export class WebsiteService {
             console.log('Jina Reader response length:', text.length);
             console.log('Jina Reader response preview:', text.substring(0, 200));
 
-            // Basic metadata fetch via HEAD/GET for favicon and title (best effort)
-            let title = 'Website';
+            // Basic metadata fetch via HEAD/GET for favicon and description (best effort)
             let description = text.substring(0, 200);
             let favicon = `https://${domain}/favicon.ico`;
 
@@ -36,12 +34,6 @@ export class WebsiteService {
                 const htmlResp = await axios.get(url, { timeout: 8000 });
                 const html = htmlResp.data as string;
                 console.log('HTML response length:', html.length);
-                
-                const titleMatch = html.match(/<title>(.*?)<\/title>/i);
-                if (titleMatch && titleMatch[1]) {
-                    title = titleMatch[1].trim();
-                    console.log('Title extracted from HTML:', title);
-                }
                 
                 const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["'][^>]*>/i) ||
                                   html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']*)["'][^>]*>/i);
@@ -60,19 +52,21 @@ export class WebsiteService {
                 // ignore metadata fallback errors
             }
 
+            // Screenshot functionality removed
+            const screenshot = '';
+
             const result = {
-                title,
                 description,
                 favicon,
                 domain,
-                screenshot: '', // skipped to avoid heavy deps
+                screenshot,
                 content: text.substring(0, 8000)
             };
             
             console.log('Metadata extraction completed successfully');
-            console.log('Final title:', title);
             console.log('Final description length:', description.length);
             console.log('Final content length:', result.content.length);
+            console.log('Screenshot functionality disabled');
             
             return result;
         } catch (error) {
@@ -83,7 +77,6 @@ export class WebsiteService {
             }
             const domain = new URL(url).hostname;
             return {
-                title: 'Website',
                 description: 'Content could not be extracted',
                 favicon: `https://${domain}/favicon.ico`,
                 domain,

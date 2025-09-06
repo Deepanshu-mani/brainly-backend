@@ -153,6 +153,75 @@ export class AIService {
         }
     }
 
+    static async generateSearchResponse(query: string, relevantContent: any[], fallbackContent: any[] = []): Promise<string> {
+        try {
+            console.log('Generating AI search response for query:', query);
+            
+            // Prepare content context
+            const allContent = relevantContent.length > 0 ? relevantContent : fallbackContent;
+            const contentContext = allContent.slice(0, 10).map((item, index) => {
+                const date = new Date(item.createdAt).toLocaleDateString();
+                const type = item.type || 'unknown';
+                const title = item.title || 'Untitled';
+                const summary = item.summary || item.content?.substring(0, 100) || '';
+                return `${index + 1}. [${type.toUpperCase()}] ${title} (${date}) - ${summary}`;
+            }).join('\n');
+
+            const systemPrompt = `You are Brainly, an AI assistant that helps users find and understand their saved content. You have access to their personal knowledge base including bookmarks, notes, videos, and other content.
+
+When users ask questions like "what did I bookmark today" or "show me my recent content", provide helpful, conversational responses based on their actual content. Be specific and mention actual titles, dates, and types when relevant.
+
+If no relevant content is found, suggest they add some content or try a different search.`;
+
+            const userPrompt = `User Query: "${query}"
+
+Available Content:
+${contentContext}
+
+Please provide a helpful response based on the user's query and their available content. Be conversational and specific.`;
+
+            // Try OpenAI first if configured
+            if (openai) {
+                try {
+                    const response = await openai.chat.completions.create({
+                        model: "gpt-3.5-turbo",
+                        messages: [
+                            { role: "system", content: systemPrompt },
+                            { role: "user", content: userPrompt }
+                        ],
+                        max_tokens: 300,
+                        temperature: 0.7,
+                    });
+                    const response_text = response.choices[0]?.message?.content || "I couldn't find any relevant content for your query.";
+                    console.log('AI search response generated with OpenAI');
+                    return response_text;
+                } catch (err) {
+                    console.warn('OpenAI search response failed, attempting Gemini fallback...', err instanceof Error ? err.message : err);
+                }
+            }
+
+            // Fallback to Gemini
+            if (gemini) {
+                try {
+                    const model = gemini.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-1.5-flash' });
+                    const prompt = `${systemPrompt}\n\n${userPrompt}`;
+                    const result = await model.generateContent([{ text: prompt }]);
+                    const response_text = result.response.text().trim();
+                    console.log('AI search response generated with Gemini');
+                    return response_text || "I couldn't find any relevant content for your query.";
+                } catch (err) {
+                    console.error('Gemini search response failed:', err instanceof Error ? err.message : err);
+                }
+            }
+
+            console.warn('No provider available for search response');
+            return "I'm sorry, I couldn't process your request right now. Please try again later.";
+        } catch (error) {
+            console.error('Error generating search response:', error);
+            return "I'm sorry, I encountered an error while processing your request.";
+        }
+    }
+
     static async processContent(content: string): Promise<AIProcessingResult> {
         try {
             console.log('Starting AI content processing...');

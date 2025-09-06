@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { Router ,Request, Response } from 'express';
 import { UserModel } from '../config/db';
 import bcrypt from 'bcrypt'
+import { userMiddleware } from '../middleware/authMiddleware';
 export const userRouter = Router();
 // schema
 const SignUpSchema = z.object({
@@ -74,5 +75,42 @@ userRouter.post('/signin', async (req: Request, res: Response) => {
             message: "Error processing sign in",
             error: e
         })
+    }
+});
+
+// Get user profile
+userRouter.get('/profile', userMiddleware, async (req: Request, res: Response) => {
+    try {
+        if (!req.userId) {
+            res.status(401).json({ message: 'User not authenticated' });
+            return;
+        }
+
+        const user = await UserModel.findById(req.userId).select('-password');
+        if (!user) {
+            res.status(404).json({ message: 'User not found' });
+            return;
+        }
+
+        res.status(200).json({
+            id: user._id,
+            username: user.username,
+            email: user.email
+        });
+    } catch (error) {
+        console.error('Error fetching user profile:', error);
+        res.status(500).json({ message: 'Error fetching user profile' });
+    }
+});
+
+// Logout (client-side token removal, but we can add server-side logic if needed)
+userRouter.post('/logout', userMiddleware, async (req: Request, res: Response) => {
+    try {
+        // For JWT tokens, logout is typically handled client-side by removing the token
+        // But we can add server-side logic here if needed (like token blacklisting)
+        res.status(200).json({ message: 'Logged out successfully' });
+    } catch (error) {
+        console.error('Error during logout:', error);
+        res.status(500).json({ message: 'Error during logout' });
     }
 });

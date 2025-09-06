@@ -255,7 +255,7 @@ export class VectorSearchService {
             const tokenSet = new Set(tokens.map(t => t.toLowerCase()));
 
             const scored: SearchResult[] = content.map(item => {
-                const title = (item.title || '').toLowerCase();
+                const title = '';
                 const summary = ((item as any).summary || '').toLowerCase();
                 const keywords: string[] = Array.isArray((item as any).keywords) ? (item as any).keywords : [];
                 const tags: string[] = Array.isArray(item.tags) ? item.tags : [];

@@ -8,7 +8,7 @@ const UserSchema = new Schema({
 })
 
 const ContentSchema = new Schema({
-    title: { type: String, required: true },
+    title: { type: String },
     link: { type: String },
     content: { type: String },
     type: { 
