@@ -32,6 +32,11 @@ export class AIService {
             console.log('Generating summary...');
             console.log('Content length:', content.length);
 
+            // If no content provided, return a default message
+            if (!content || content.trim().length === 0) {
+                return 'No content was provided for summarization. Therefore, no summary can be generated.';
+            }
+
             // Try OpenAI first if configured
             if (openai) {
                 try {
@@ -66,20 +71,45 @@ export class AIService {
                 }
             }
 
-            console.warn('No provider available for summary');
-            return 'Summary not available';
+            // Fallback: Generate a simple summary from the content
+            console.log('No AI provider available, generating fallback summary');
+            return this.generateFallbackSummary(content);
         } catch (error) {
             console.error('Error generating summary:', error);
             if (error instanceof Error) {
                 console.error('Error details:', error.message);
                 console.error('Error stack:', error.stack);
             }
-            return "Summary not available";
+            return this.generateFallbackSummary(content);
         }
+    }
+
+    private static generateFallbackSummary(content: string): string {
+        if (!content || content.trim().length === 0) {
+            return 'No content was provided for summarization. Therefore, no summary can be generated.';
+        }
+
+        // Simple fallback: take first few sentences or first 200 characters
+        const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0);
+        if (sentences.length > 0) {
+            const firstSentence = sentences[0].trim();
+            if (firstSentence.length > 200) {
+                return firstSentence.substring(0, 200) + '...';
+            }
+            return firstSentence;
+        }
+
+        // If no sentences found, just take first 200 characters
+        return content.substring(0, 200) + (content.length > 200 ? '...' : '');
     }
 
     static async extractKeywords(content: string): Promise<string[]> {
         try {
+            // If no content provided, return empty array
+            if (!content || content.trim().length === 0) {
+                return [];
+            }
+
             // Try OpenAI first if configured
             if (openai) {
                 try {
@@ -112,15 +142,34 @@ export class AIService {
                 }
             }
 
-            console.warn('No provider available for keywords');
-            return [];
+            // Fallback: Extract simple keywords from content
+            console.log('No AI provider available, generating fallback keywords');
+            return this.generateFallbackKeywords(content);
         } catch (error) {
             console.error('Error extracting keywords:', error);
             if (error instanceof Error) {
                 console.error('Error details:', error.message);
             }
+            return this.generateFallbackKeywords(content);
+        }
+    }
+
+    private static generateFallbackKeywords(content: string): string[] {
+        if (!content || content.trim().length === 0) {
             return [];
         }
+
+        // Simple keyword extraction: find common words and filter out stop words
+        const stopWords = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them']);
+        
+        const words = content.toLowerCase()
+            .replace(/[^\w\s]/g, ' ')
+            .split(/\s+/)
+            .filter(word => word.length > 3 && !stopWords.has(word))
+            .filter((word, index, arr) => arr.indexOf(word) === index) // Remove duplicates
+            .slice(0, 8); // Take first 8 unique words
+
+        return words;
     }
 
     static async generateEmbedding(text: string): Promise<number[]> {
